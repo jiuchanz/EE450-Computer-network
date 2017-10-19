@@ -25,7 +25,8 @@ network_output = deque()
 timer1 = time.time()
 current_state = "idle"
 current_msg= ""
-sendFlag=True 
+sendFlag=False 
+inputPop=True
 
 # You can keep your code simple by keeping a state transition table as a
 # python dictionary (dictionary of lists or dictionary of dictionaries for
@@ -43,7 +44,7 @@ state_transition_table["s1"]["ok"]="F"
 state_transition_table["s1"]["done"]="s1"
 state_transition_table["s2"]={}
 state_transition_table["s2"]["five"]="s3"
-state_transition_table["s2"]["green"]="s3"
+state_transition_table["s2"]["green"]="s2"
 state_transition_table["s2"]["ok"]="F"
 state_transition_table["s2"]["done"]="s2"
 state_transition_table["s3"]={}
@@ -53,6 +54,7 @@ state_transition_table["s3"]["ok"]="F"
 state_transition_table["s3"]["done"]="s3"
 state_transition_table["s4"]={}
 state_transition_table["s4"]["pink"]="s4"
+state_transition_table["s4"]["two"]="s5"
 state_transition_table["s4"]["ok"]="F"
 state_transition_table["s4"]["done"]="s4"
 state_transition_table["s3"]["seven"]="s5"
@@ -75,7 +77,7 @@ def handle_io():
     global current_msg
     global sendFlag
 
-
+    global inputPop
     command_table={}
     command_table["h"]="hi"
     command_table["r"]="red"
@@ -105,20 +107,25 @@ def handle_io():
         # Great- we got a message from the server.
         print("Got message %s" % msg_from_server)
         # Do some things.
-        if state_transition_table[current_state].has_key(msg_from_server) :
+        if state_transition_table[current_state].has_key(msg_from_server) and state_transition_table[current_state][msg_from_server]!=current_state :
         	
             current_state=state_transition_table[current_state][msg_from_server]
+            inputPop=True
+            sendFlag=False
            
-            sendFlag=True
-            print("ha")
             if current_state=="F" :
             	network_output.appendleft("bye")
             	current_msg="bye"
-            
+            if current_state=="idle" :
+                sendFlag=False 
+                inputPop=True
+                
             return
         else:
             print("Wrong message from server, attempt to resent current messge: %s" % current_msg )
-            sendFlag=False
+            timer1=time.time()
+            inputPop=False
+            sendFlag=True
             network_output.appendleft(current_msg)
             
             return
@@ -129,10 +136,17 @@ def handle_io():
         # No message from server.
         # Do some things - like check if a timeout has expired.
         #print("no response")
-        if not sendFlag:
-        	#print("return")
-        	return
-        pass
+        current_time=time.time()
+        
+
+        if sendFlag and (current_time-timer1)>3:
+            network_output.appendleft(current_msg)
+       	    print("no response from server over 3 seconds, resend the msg")
+            sendFlag=True
+            inputPop=False
+            timer1=time.time()
+            return
+        
     except Exception as e:
         print("Unhandled exception: %s" % e)
         raise
@@ -153,17 +167,24 @@ def handle_io():
     # Remember to print error messages if the keyboard input does not follow
     # protocol.
     try:
-        input = local_input.pop()
+        if inputPop:
+            input = local_input.pop()
+            inputPop=False
+        else :
+            return
 
         # Do some things
-        if command_table.has_key(input) and  state_transition_table[current_state].has_key(command_table[input]):
+        if command_table.has_key(input) and  state_transition_table[current_state].has_key(command_table[input])  :
             current_msg=command_table[input]
             if state_transition_table[current_state].has_key(current_msg):
-            	sendFlag=False
-            
+            	sendFlag=True
+                inputPop=False
+                timer1=time.time()
             	network_output.appendleft(current_msg)
+
         else :
-        	print("wrong keyboard input, please give command again")
+            print("wrong keyboard input, please give command again")
+            inputPop=True
         return
     except IndexError:
         # Probably do nothing, but wait.
@@ -174,7 +195,7 @@ def handle_io():
     return
 
 def run_loop():
-    global our_socket, local_input, network_input, network_output,sendFlag
+    global our_socket, local_input, network_input, network_output
     watch_for_write = []
     watch_for_read = [sys.stdin, our_socket]
     while True:
@@ -187,22 +208,14 @@ def run_loop():
                 watch_for_write = [our_socket]
             else:
                 watch_for_write = []
-            input_ready, output_ready, except_ready = select.select(watch_for_read, watch_for_write, watch_for_read,3)
-			
-            if input_ready==[] and output_ready==[] and except_ready==[] and sendFlag==False :
-            	print("no response from server over 3 seconds, resend the msg")
-            	network_output.appendleft(current_msg)
-            
+            input_ready, output_ready, except_ready = select.select(watch_for_read, watch_for_write, watch_for_read, 3)    
             
             for item in input_ready:
-            	
                 if item == sys.stdin:
                     data = sys.stdin.readline().strip()
-                   
                     if len(data) > 0:
                         print("Received local input: %s" % data)
                         local_input.appendleft(str(data)) 
-
                     else:
                         pass
                 if item == our_socket:
@@ -213,8 +226,6 @@ def run_loop():
                     else:
                         our_socket.close()
                         return
-
-                
             
             # Though the amount of data you are writing to the socket will
             # not overload the outgoing buffer...it is good practice to
@@ -224,8 +235,6 @@ def run_loop():
                 if item == our_socket:
                     try:
                         msg_to_send = network_output.pop()
-                        print("send %s" % msg_to_send)
-
                         
                         # Normally you want to check the return value of
                         # send() to make sure you were able to send all the
@@ -255,7 +264,7 @@ def connect_to_server():
     global our_socket
     # "Good" server at port 65520
     # "Bad" server at port 65521
-    server_address = ('steel.isi.edu', 65521)
+    server_address = ('steel.isi.edu', 65520)
     our_socket.connect(server_address)
     return
 
