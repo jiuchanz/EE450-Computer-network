@@ -14,7 +14,11 @@ import time
 import socket
 import sys
 import select
-
+import re
+global addresses
+global ports
+global  UDP_IP 
+global UDP_PORT 
 
 # In general, globals should be sparingly used if at all.
 # However, for this simple program it's *ok*.
@@ -27,6 +31,7 @@ timer1 = time.time()
 current_state = "idle"
 current_msg= ""
 sendFlag=True 
+
 
 # You can keep your code simple by keeping a state transition table as a
 # python dictionary (dictionary of lists or dictionary of dictionaries for
@@ -175,73 +180,135 @@ def handle_io():
     return
 
 def run_loop():
-    global our_socket, local_input, network_input, network_output,sendFlag
+    global our_socket, local_input, network_input, network_output,sendFlag,UDP_IP,UDP_PORT, ids,idsKnown,ips,ports,myPeerName, myIP,myPORT
     watch_for_write = []
     watch_for_read = [sys.stdin, our_socket]
+    MNUMCount=0;
+    MNUMArr={};
+    MNUMTimes={};
+    idsKnown=[]
+    ips=[]
+    ports=[]
     while True:
         try:
             # Use select to wait for input from either stdin (0) or our
             # socket (i.e.  network input).  Select returns when one of the
             # watched items has input, or has outgoing buffer space or has
             # an error.
-            if len(network_output) > 0:
-                watch_for_write = [our_socket]
-            else:
-                watch_for_write = []
+            
             input_ready, output_ready, except_ready = select.select(watch_for_read, watch_for_write, watch_for_read,3)
 			
-            if input_ready==[] and output_ready==[] and except_ready==[] and sendFlag==False :
-            	print("no response from server over 3 seconds, resend the msg")
-            	network_output.appendleft(current_msg)
-            
-            
+            MNUMTimesCopy=MNUMTimes;
+            for k,v in MNUMTimesCopy.items():
+                if v<5:
+                    data=MNUMArr[k];
+                    DST=re.findall("\d+",data)[1]
+                    UDP_IP=ips[idsKnown.index(DST)]
+                    UDP_PORT=int(ports[idsKnown.index(DST)])
+                    print("resend message: ",data)
+                    our_socket.sendto(data.encode('utf-8'),(UDP_IP, UDP_PORT))
+                    MNUMTimesCopy[k]+=1;
+                    print(v);
+                else:
+                    print("********************")
+                    print("ERROR: Gave up sending to ",k)
+                    print("********************")
+                    MNUMArr.pop(k)
+                    MNUMTimesCopy.pop(k)
+            MNUMTimes=MNUMTimesCopy
             for item in input_ready:
             	
                 if item == sys.stdin:
-                    data = sys.stdin.readline().strip()
-                   
-                    if len(data) > 0:
-                        print("Received local input: %s" % data)
-                        local_input.appendleft(str(data)) 
+                    MESSAGE = sys.stdin.readline().strip()
+                    if MESSAGE=="ids":
+                        UDP_IP = 'steel.isi.edu'
+                        UDP_PORT = 63682
+                        MESSAGE="SRC:"+myPeerName+";DST:999;PNUM:5;HCT:1;MNUM:002;VL:;MESG:get map"
+                        our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+                        data, server = our_socket.recvfrom(4096)
+                        print("Got message %s" % data.decode('utf-8'))
+                        MESG=data.decode('utf-8').split(";")[6] 
+                        ids=re.findall("\d+",MESG.split("and")[0])
 
-                    else:
-                        pass
+                        addressIP=MESG.split("and")[1].split(",")
+
+                        idsKnown=[]
+                        ips=[]
+                        ports=[]
+                        for x in addressIP:
+                            idsKnown.append(x.split("=")[0])
+                            ips.append(re.search(r"(?<=\=).*?(?=\@)", x).group(0))
+                            ports.append(x.split("@")[1])
+                        idsKnown.append(myPeerName)
+                        ips.append(myIP)
+                        ports.append(myPORT)
+
+
+                        print("")
+                        print("********************")
+                        print("Recently Seen Peers:")
+                        peersStr=""
+                        for x in ids:
+                            peersStr+=(x+",")
+
+                        print(peersStr)
+                        print("Known addresses:") 
+                        for i,j,k in zip(idsKnown,ips,ports):
+                            print(i,j,k)
+                        print("********************")
+                    elif MESSAGE[:3]=="msg":
+                        DST=MESSAGE[4:7]
+                        
+                        
+                        if DST in idsKnown:
+                            UDP_IP=ips[idsKnown.index(DST)]
+                            UDP_PORT=int(ports[idsKnown.index(DST)])
+                        else:
+                            return
+                        MESSAGE="SRC:"+myPeerName+";DST:"+DST+";PNUM:3;HCT:1;MNUM:"+format(MNUMCount, '03d')+";VL:;MESG:"+MESSAGE[8:]
+                        MNUMArr[format(MNUMCount, '03d')]=MESSAGE;
+                        MNUMTimes[format(MNUMCount, '03d')]=0;
+                        MNUMCount+=1;
+                       
+                        print(MESSAGE)
+                        
+                        print(UDP_IP," ",UDP_PORT) 
+                        our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+                        
+                    
                 if item == our_socket:
-                    data = our_socket.recv(1024).decode('utf-8')
-                    if len(data) > 0:
-                        print("Received from network: %s" % data)
-                        network_input.appendleft(str(data))
-                    else:
-                        our_socket.close()
-                        return
+                    data, server = our_socket.recvfrom(4096)
+                    print("Got message %s" % data.decode('utf-8'))
+                    SRC=str(re.findall("\d+",data.decode('utf-8'))[0])
+                    DST=str(re.findall("\d+",data.decode('utf-8'))[1])
+                    PNUM=str(re.findall("\d+",data.decode('utf-8'))[2])
+                    
+                    MNUM=str(re.findall("\d+",data.decode('utf-8'))[4]);
+                    
 
-                
+                   
+
+                    if PNUM=="4":
+                        
+                        if  MNUM in MNUMTimes:
+                           
+                            MNUMArr.pop(MNUM)
+                           
+                            MNUMTimes.pop(MNUM)
+                            
+
+                        continue
+
+                    MESSAGE="SRC:"+DST+";DST:"+SRC+";PNUM:4;HCT:1;MNUM:"+MNUM+";VL:;MESG:ACK"
+                    our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+
+            
             
             # Though the amount of data you are writing to the socket will
             # not overload the outgoing buffer...it is good practice to
             # only write to sockets when you know their outgoing buffer
             # is not full.
-            for item in output_ready:
-                if item == our_socket:
-                    try:
-                        msg_to_send = network_output.pop()
-                        print("send %s" % msg_to_send)
-
-                        
-                        # Normally you want to check the return value of
-                        # send() to make sure you were able to send all the
-                        # bytes.  Our messages are so short, we don't bother
-                        # doing that here.
-                        our_socket.send(msg_to_send.encode('utf-8'))
-                    except IndexError:
-                        pass
-                    except Exception as e:
-                        print("Unhandled send exception: %s" % e)
             
-            for item in except_ready:
-                if item == our_socket:
-                    our_socket.close()
-                    return
         
         # Catch ^C to cancel and end program.
         except KeyboardInterrupt:
@@ -250,14 +317,42 @@ def run_loop():
         except Exception as e:
             print("Unhandled exception 0: %s" % e)
             return
-        handle_io()
+        #handle_io()
 
 def connect_to_server():
     global our_socket
-    # "Good" server at port 65520
-    # "Bad" server at port 65521
-    server_address = ('steel.isi.edu', 65520)
-    our_socket.connect(server_address)
+    
+    global UDP_IP
+    global UDP_PORT
+    global myPeerName
+    global myIP
+    global myPORT
+    UDP_IP = 'steel.isi.edu'
+    UDP_PORT = 63682
+    MESSAGE = "SRC:000;DST:999;PNUM:1;HCT:1;MNUM:001;VL:;MESG:register"
+    our_socket = socket.socket(socket.AF_INET, # Internet
+                        socket.SOCK_DGRAM) # UDP
+
+    our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+   
+    
+    # Receive response
+    
+    data, server = our_socket.recvfrom(4096)
+    print("Got message %s" % data.decode('utf-8'))
+    
+    
+    
+    MESG=data.decode('utf-8').split(";")[6] 
+    myPeerName=re.findall("\d+",MESG)[0]
+    myIP= re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', MESG).group()
+    myPORT=MESG.split("@")[1]
+
+    print("Successfully registered. My ID is: ",myPeerName)
+    
+    #print(addressIP)
+    #print(addresses)
+    #print(ports)
     return
 
 if __name__ == "__main__":
