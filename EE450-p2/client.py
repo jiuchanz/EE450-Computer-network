@@ -25,170 +25,27 @@ global UDP_PORT
 # You are not required to use these, but you may find them helpful.
 our_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 local_input = deque()
-network_input = deque()
-network_output = deque()
-timer1 = time.time()
-current_state = "idle"
-current_msg= ""
-sendFlag=True 
 
 
-# You can keep your code simple by keeping a state transition table as a
-# python dictionary (dictionary of lists or dictionary of dictionaries for
-# example).  Again, for this simple program, you can make this a global
-# variable.
-state_transition_table = {}
-state_transition_table["idle"]={}
-state_transition_table["idle"]["hello"]="s1"
-state_transition_table["idle"]["hi"]="idle"
-
-state_transition_table["s1"]={}
-state_transition_table["s1"]["three"]="s2"
-state_transition_table["s1"]["red"]="s1"
-state_transition_table["s1"]["ok"]="F"
-state_transition_table["s1"]["done"]="s1"
-state_transition_table["s2"]={}
-state_transition_table["s2"]["five"]="s3"
-state_transition_table["s2"]["green"]="s3"
-state_transition_table["s2"]["ok"]="F"
-state_transition_table["s2"]["done"]="s2"
-state_transition_table["s3"]={}
-state_transition_table["s3"]["one"]="s4"
-state_transition_table["s3"]["blue"]="s3"
-state_transition_table["s3"]["ok"]="F"
-state_transition_table["s3"]["done"]="s3"
-state_transition_table["s4"]={}
-state_transition_table["s4"]["pink"]="s4"
-state_transition_table["s4"]["ok"]="F"
-state_transition_table["s4"]["done"]="s4"
-state_transition_table["s3"]["seven"]="s5"
-state_transition_table["s3"]["red"]="s3"
-state_transition_table["s5"]={}
-state_transition_table["s5"]["six"]="s2"
-state_transition_table["s5"]["orange"]="s5"
-state_transition_table["s5"]["ok"]="F"
-state_transition_table["s5"]["done"]="s5"
-state_transition_table["F"]={}
-state_transition_table["F"]["bye"]="idle"
 
 
-def handle_io():
-    # This is likley the only function you'll want to edit.
-    validRes=0;
-    global our_socket, local_input, network_input, network_output
-    global current_state, timer1
-    global state_transition_table
-    global current_msg
-    global sendFlag
 
-
-    command_table={}
-    command_table["h"]="hi"
-    command_table["r"]="red"
-    command_table["g"]="green"
-    command_table["p"]="pink"
-    command_table["b"]="blue"
-    command_table["o"]="orange"
-    command_table["d"]="done"
-    current_time = time.time()
-
-    # Did you get something from the server?
-    #
-    # 1) Are you expecting something from the server, but nothing came?  Has
-    # it been 3 seconds?  If so, re-send your message by appending it to the
-    # left side of the network_output queue and return.  If it hasn't been 3
-    # seconds, there's nothing to do but wait a little longer (so return).
-    # Remember to print error messages when you need to resend.
-    #
-    # 2) Are you expecting something from the server, and something came?
-    # Does what you received make sense for the protocol?  If not, re-send
-    # your message by appending it to the left side of the network_output
-    # queue, and return.
-    # Remember to print error messages when you don't get what you expect.
-    try:
-        # Pop will *remove* the message from the FIFO queue, and return it.
-        msg_from_server = network_input.pop()
-        # Great- we got a message from the server.
-        print("Got message %s" % msg_from_server)
-        # Do some things.
-        if state_transition_table[current_state].has_key(msg_from_server) :
-        	
-            current_state=state_transition_table[current_state][msg_from_server]
-           
-            sendFlag=True
-            print("ha")
-            if current_state=="F" :
-            	network_output.appendleft("bye")
-            	current_msg="bye"
-            
-            return
-        else:
-            print("Wrong message from server, attempt to resent current messge: %s" % current_msg )
-            sendFlag=False
-            network_output.appendleft(current_msg)
-            
-            return
-            
-            
-        
-    except IndexError:
-        # No message from server.
-        # Do some things - like check if a timeout has expired.
-        #print("no response")
-        if not sendFlag:
-        	#print("return")
-        	return
-        pass
-    except Exception as e:
-        print("Unhandled exception: %s" % e)
-        raise
-
-    # Do we have keyboard input?
-    #
-    # 1) Have we handled our last message ok?  (e.g.  Did we get a response
-    # back from the server and did the response make sense?) If we haven't
-    # handled our last message ok, we cannot move on to new keyboard input.
-    #
-    # Send a message by appending it to the left side of the network_output
-    # queue a the message onto the network_output queue.  E.g.
-    # network_output.appendleft(mesg)
-    # (Or change the code if you wish to send some other way)
-    #
-    # 2) If we're ready to move on, great!  Pop the next keyboard message,
-    # check if it follows protocol and if so, keep going.
-    # Remember to print error messages if the keyboard input does not follow
-    # protocol.
-    try:
-        input = local_input.pop()
-
-        # Do some things
-        if command_table.has_key(input) and  state_transition_table[current_state].has_key(command_table[input]):
-            current_msg=command_table[input]
-            if state_transition_table[current_state].has_key(current_msg):
-            	sendFlag=False
-            
-            	network_output.appendleft(current_msg)
-        else :
-        	print("wrong keyboard input, please give command again")
-        return
-    except IndexError:
-        # Probably do nothing, but wait.
-        pass
-    except Exception as e:
-        print("Unhandled exception: %s" % e)
-        raise
-    return
 
 def run_loop():
     global our_socket, local_input, network_input, network_output,sendFlag,UDP_IP,UDP_PORT, ids,idsKnown,ips,ports,myPeerName, myIP,myPORT
+    import copy
     watch_for_write = []
     watch_for_read = [sys.stdin, our_socket]
-    MNUMCount=0;
-    MNUMArr={};
-    MNUMTimes={};
+    MNUMCount=0
+    MNUMArr={}
+    MNUMTimes={}
+    MNUMIP={}
+    MNUMPort={}
     idsKnown=[]
     ips=[]
     ports=[]
+    relayID=""
+    
     while True:
         try:
             # Use select to wait for input from either stdin (0) or our
@@ -197,25 +54,31 @@ def run_loop():
             # an error.
             
             input_ready, output_ready, except_ready = select.select(watch_for_read, watch_for_write, watch_for_read,3)
-			
-            MNUMTimesCopy=MNUMTimes;
-            for k,v in MNUMTimesCopy.items():
-                if v<5:
+            MNUMTimesCopy=copy.copy(MNUMTimes)
+            for k,v in MNUMTimes.items():
+                if v<=5 :
+                    if v==0:
+                        MNUMTimesCopy[k]+=1
+                        continue
                     data=MNUMArr[k];
-                    DST=re.findall("\d+",data)[1]
-                    UDP_IP=ips[idsKnown.index(DST)]
-                    UDP_PORT=int(ports[idsKnown.index(DST)])
+                    
+                    UDP_IP=MNUMIP[k]
+                    UDP_PORT=int(MNUMPort[k])
+                    
                     print("resend message: ",data)
                     our_socket.sendto(data.encode('utf-8'),(UDP_IP, UDP_PORT))
-                    MNUMTimesCopy[k]+=1;
-                    print(v);
+                    MNUMTimesCopy[k]+=1
+                    print(v)
                 else:
+                    data=MNUMArr[k];
+                    DST=re.findall("\d+",data)[1]
                     print("********************")
-                    print("ERROR: Gave up sending to ",k)
+                    print("ERROR: Gave up sending to ",DST)
                     print("********************")
                     MNUMArr.pop(k)
                     MNUMTimesCopy.pop(k)
             MNUMTimes=MNUMTimesCopy
+            
             for item in input_ready:
             	
                 if item == sys.stdin:
@@ -263,18 +126,55 @@ def run_loop():
                         if DST in idsKnown:
                             UDP_IP=ips[idsKnown.index(DST)]
                             UDP_PORT=int(ports[idsKnown.index(DST)])
+                            MESSAGE="SRC:"+myPeerName+";DST:"+DST+";PNUM:3;HCT:1;MNUM:"+format(MNUMCount, '03d')+";VL:;MESG:"+MESSAGE[8:]
+                            MNUMArr[format(MNUMCount, '03d')]=MESSAGE;
+                            MNUMTimes[format(MNUMCount, '03d')]=0;
+                            MNUMPort[format(MNUMCount, '03d')]=UDP_PORT
+                            MNUMIP[format(MNUMCount, '03d')]=UDP_IP
+                            MNUMCount+=1;
+
+                            our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, int(UDP_PORT)))
+
                         else:
-                            return
-                        MESSAGE="SRC:"+myPeerName+";DST:"+DST+";PNUM:3;HCT:1;MNUM:"+format(MNUMCount, '03d')+";VL:;MESG:"+MESSAGE[8:]
-                        MNUMArr[format(MNUMCount, '03d')]=MESSAGE;
-                        MNUMTimes[format(MNUMCount, '03d')]=0;
-                        MNUMCount+=1;
+                            VL=[]
+                            VL.append(myPeerName)
+                            VLstr=",".join(VL)
+                            relayID=DST
+                            for x in range(0,3):
+
+                                UDP_IP=ips[x]
+
+                                UDP_PORT=int(ports[x])
+                                if UDP_IP==myIP and UDP_PORT==int(myPORT):
+                                    continue
+                                data="SRC:"+myPeerName+";DST:"+DST+";PNUM:3;HCT:9;MNUM:"+format(MNUMCount, '03d')+";VL:;MESG:"+MESSAGE[8:]
+                                our_socket.sendto(data.encode('utf-8'),(UDP_IP, int(UDP_PORT)))
+                                print(UDP_IP,UDP_PORT)
+                                MNUMPort[format(MNUMCount, '03d')]=UDP_PORT
+                                MNUMIP[format(MNUMCount, '03d')]=UDP_IP
+                                MNUMArr[format(MNUMCount, '03d')]=data;
+                                MNUMTimes[format(MNUMCount, '03d')]=0;
+                                MNUMCount+=1;
+
+                        
                        
-                        print(MESSAGE)
                         
-                        print(UDP_IP," ",UDP_PORT) 
-                        our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
                         
+                    elif MESSAGE[:3]=="all": 
+                        MESSAGE=MESSAGE[4:]
+                        for ID,UDP_IP,UDP_PORT in zip(idsKnown,ips,ports):
+                            if ID==myPeerName:
+                             continue
+                            data="SRC:"+myPeerName+";DST:"+ID+";PNUM:7;HCT:1;MNUM:"+format(MNUMCount, '03d')+";VL:;MESG:"+MESSAGE
+                            MNUMArr[format(MNUMCount, '03d')]=data;
+                            MNUMTimes[format(MNUMCount, '03d')]=0;
+                            MNUMPort[format(MNUMCount, '03d')]=UDP_PORT
+                            MNUMIP[format(MNUMCount, '03d')]=UDP_IP
+                            MNUMCount+=1;
+                            
+                            
+                            our_socket.sendto(data.encode('utf-8'),(UDP_IP, int(UDP_PORT)))
+
                     
                 if item == our_socket:
                     data, server = our_socket.recvfrom(4096)
@@ -282,26 +182,53 @@ def run_loop():
                     SRC=str(re.findall("\d+",data.decode('utf-8'))[0])
                     DST=str(re.findall("\d+",data.decode('utf-8'))[1])
                     PNUM=str(re.findall("\d+",data.decode('utf-8'))[2])
-                    
-                    MNUM=str(re.findall("\d+",data.decode('utf-8'))[4]);
-                    
+                    HCT=str(re.findall("\d+",data.decode('utf-8'))[3])
+                    MNUM=str(re.findall("\d+",data.decode('utf-8'))[4])
+                    MESG=data.decode('utf-8').split(";")[6]
+                    VL=data.decode('utf-8').split(";")[6].split(":")[1].split(",")
+
 
                    
 
-                    if PNUM=="4":
-                        
-                        if  MNUM in MNUMTimes:
-                           
+                    if PNUM=="4" or PNUM=="8":
+
+                        if  MNUM in MNUMTimes: 
                             MNUMArr.pop(MNUM)
-                           
                             MNUMTimes.pop(MNUM)
-                            
-
                         continue
+                    elif PNUM=="7":
+                         
+                        print("SRC:"+SRC+"broadcasted:"+MESG)
+                        MESSAGE="SRC:"+DST+";DST:"+SRC+";PNUM:8;HCT:1;MNUM:"+MNUM+";VL:;MESG:ACK"
+                        our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+                    elif PNUM=="3" :
+                        MESSAGE="SRC:"+DST+";DST:"+SRC+";PNUM:4;HCT:1;MNUM:"+MNUM+";VL:;MESG:ACK"
+                        our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+                        if DST!=myPeerName: 
+                            MESSAGE="SRC:"+DST+";DST:"+SRC+";PNUM:4;HCT:1;MNUM:"+MNUM+";VL:;MESG:ACK"
+                            our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+                            if HCT=="0":
+                                print("********************")
+                                print("Dropped message from "+SRC+" to "+DST+" - hop count exceeded")
+                                print("MESG: "+MESG)
+                            elif myPeerName in VL:
+                                print("********************")
+                                print("Dropped message from "+SRC+" to "+DST+" - peer revisited")
+                                print("MESG: "+MESG)
+                            else:
+                                VL.append(myPeerName)
+                                VLstr=",".join(VL)
+                                HCT=str(int(HCT)-1)
+                                for x in range(0,3):
+                                    UDP_IP=ips[x]
+                                    UDP_PORT=int(ports[x])
+                                    MESSAGE="SRC:"+DST+";DST:"+SRC+";PNUM:3;HCT:"+HCT+";MNUM:"+MNUM+";VL:"+VLstr+";MESG:"+MESG
+                                    our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
 
-                    MESSAGE="SRC:"+DST+";DST:"+SRC+";PNUM:4;HCT:1;MNUM:"+MNUM+";VL:;MESG:ACK"
-                    our_socket.sendto(MESSAGE.encode('utf-8'),(UDP_IP, UDP_PORT))
+                               
 
+
+            
             
             
             # Though the amount of data you are writing to the socket will
